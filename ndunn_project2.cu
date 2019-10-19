@@ -68,6 +68,34 @@ __global__ void MatrixMulKernel(float* d_M, float* d_N, float* d_P, int Width)
 	 d_P[Row*Width+Col] = Pvalue;
 }
 
+/**
+	Verifies that an input matrix matches the product of two matrices. Each matrix
+	element is computed individually and compared. If the comparison is not within
+	the tolerance, the function automatically returns false
+	A - Matrix to use for testing
+	B - Matrix to use for testing
+	C - Matrix to be tested
+	width - size of input matrices
+*/
+bool verify(float *A, float *B, float *C, int  width) {
+     const float relativeTolerance = 1e-6; // 1e-6 = 0.000001 
+     for(int row = 0; row < width; ++row) {
+    	for(int col = 0; col < width; ++col) {
+     		float sum = 0;
+      		for(unsigned int k = 0; k < width; ++k) {
+        			sum += A[row*width + k]*B[k*width + col];
+      		}
+      		float relativeError = (sum - C[row*width + col])/sum;
+     	 	if (relativeError > relativeTolerance
+       		 || relativeError < -relativeTolerance) {
+        			printf("TEST FAILED\n\n");
+        			return false;
+     	 	}
+  	}
+      }
+      printf("TEST PASSED\n\n");
+      return true; 
+}
 
 /**
 	Prints a matrix.
@@ -141,10 +169,17 @@ int main(int argc, char* argv[])
 	printf("GPU Device Product: \n");
 	printMatrix(c, N);
 	
-	// compute result on cpu and display it
+	// compute result on CPU and display it
 	MatrixMulOnHost(a, b, d, N);
 	printf("CPU Product: \n");
 	printMatrix(d, N);
+	
+	int cpuValid = verify(a, b, d, N);
+	int gpuValid = verify(a, b, c, N);
+	
+	if(cpuValid && gpuValid){
+		printf("Validating results...TEST PASSED\n");
+	}
 	
 	// free system and device memory
 	free(a);
