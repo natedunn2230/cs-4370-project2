@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <cuda.h>
+#include <time.h>
 
 /**
  * Nathan Dunn
@@ -9,8 +10,8 @@
  * Tiled Matrix Multiplication
 */
 
-#define N 2 // size of the matrices to be multiplied
-#define TILE_WIDTH 1 // size of the tiles
+#define N 16 // size of the matrices to be multiplied
+#define TILE_WIDTH 2 // size of the tiles
 
 /**
  * Computes the matrix multiplication on the CPU
@@ -88,13 +89,13 @@ bool verify(float *A, float *B, float *C, int  width) {
       		float relativeError = (sum - C[row*width + col])/sum;
      	 	if (relativeError > relativeTolerance
        		 || relativeError < -relativeTolerance) {
-        			printf("TEST FAILED\n\n");
+				 printf("TEST FAILED\n");
         			return false;
      	 	}
-  	}
-      }
-      printf("TEST PASSED\n\n");
-      return true; 
+		}
+	}
+	printf("TEST PASSED\n");
+    return true; 
 }
 
 /**
@@ -131,7 +132,6 @@ int main(int argc, char* argv[])
 	cudaMalloc((void **)(&dev_b), N*N*sizeof(float));
 	cudaMalloc((void **)(&dev_c), N*N*sizeof(float));
 	
-	
 	// initialize matrices a and b
 	int init =1325;
 	for(int i=0; i<N; i++){
@@ -144,9 +144,26 @@ int main(int argc, char* argv[])
 		}
 	}
 	
+	// Variables to measure GPU computation time and memory transfer time
+	float timeGPU, timeTransfer, timeBack;
+	cudaEvent_t gpuStart,gpuStop;
+	
+	// Begin measuring time for copying memory over to device
+	cudaEventCreate(&gpuStart);
+	cudaEventCreate(&gpuStop);
+	cudaEventRecord(gpuStart,0);
+	
 	// copy array a,b (system memory) to dev_a, dev_b (device memory)
 	cudaMemcpy(dev_a,a,N*N*sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_b,b,N*N*sizeof(float), cudaMemcpyHostToDevice);
+	
+	// Finish measuring time for copying memory over to device
+	cudaDeviceSynchronize(); 
+	cudaEventRecord(gpuStop,0);
+	cudaEventSynchronize(gpuStop);
+	cudaEventElapsedTime(&timeTransfer,gpuStart,gpuStop);
+    cudaEventDestroy(gpuStart);
+    cudaEventDestroy(gpuStop);
 	
 	printf("Matrix A: \n");
 	printMatrix(a, N);
@@ -157,20 +174,59 @@ int main(int argc, char* argv[])
 	dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
 	dim3 dimGrid(N/dimBlock.x, N/dimBlock.y);
 	
-	// launch kernels
+	// Begin measuring GPU computation time
+	cudaEventCreate(&gpuStart);
+	cudaEventCreate(&gpuStop);
+	cudaEventRecord(gpuStart,0);
+	
+	// Launch kernels
 	MatrixMulKernel<<<dimGrid, dimBlock>>>(dev_a, dev_b, dev_c, N);
 	
+	// Finish measuring GPU computation time
 	cudaDeviceSynchronize();
+	cudaEventRecord(gpuStop,0);
+	cudaEventSynchronize(gpuStop);
+	cudaEventElapsedTime(&timeGPU,gpuStart,gpuStop);
+    cudaEventDestroy(gpuStart);
+    cudaEventDestroy(gpuStop);
+	
+	// Begin measuring time for copying memory back to host
+	cudaEventCreate(&gpuStart);
+	cudaEventCreate(&gpuStop);
+	cudaEventRecord(gpuStart,0);
+	
 	// copy results from GPU back to system memory
 	cudaMemcpy(c, dev_c, N*N*sizeof(float), cudaMemcpyDeviceToHost);
+	
+	// Finish measuring time for copying memory back to host
 	cudaDeviceSynchronize();
+    cudaEventRecord(gpuStop,0);
+	cudaEventSynchronize(gpuStop);
+	cudaEventElapsedTime(&timeBack,gpuStart,gpuStop);
+    cudaEventDestroy(gpuStart);
+    cudaEventDestroy(gpuStop);
+	
+	// total transfer time includes copy to and copy back time
+    timeTransfer += timeBack;
 	
 	// display GPU device result
 	printf("GPU Device Product: \n");
 	printMatrix(c, N);
 	
+	// variables used to measure cpu computation time
+	clock_t cpuStart, cpuEnd;
+	float cpuTimeTaken;
+	
+	// start measuring cpu computation time
+	cpuStart = clock();
+
 	// compute result on CPU and display it
 	MatrixMulOnHost(a, b, d, N);
+	
+	// stop measuring cpu computation time
+	cpuEnd = clock();
+	cpuTimeTaken = ((double)cpuEnd - cpuStart)/CLOCKS_PER_SEC; // in seconds 
+	
 	printf("CPU Product: \n");
 	printMatrix(d, N);
 	
@@ -179,7 +235,15 @@ int main(int argc, char* argv[])
 	
 	if(cpuValid && gpuValid){
 		printf("Validating results...TEST PASSED\n");
+	} else {
+		printf("Validating results...TEST FAILED\n");
 	}
+	
+	// display GPU computation and copy time
+	printf("GPU Time: %f, Memory Copy Time: %f\n", timeGPU, timeTransfer);
+	
+	// display CPU computation time
+	printf("CPU Time: %f\n", cpuTimeTaken);
 	
 	// free system and device memory
 	free(a);
@@ -189,7 +253,6 @@ int main(int argc, char* argv[])
 	cudaFree(dev_a);
 	cudaFree(dev_b);
 	cudaFree(dev_c);
-	
 	
 	return 0;
 }
