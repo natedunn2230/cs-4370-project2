@@ -11,7 +11,7 @@
 */
 
 #define N 16 // size of the matrices to be multiplied
-#define TILE_WIDTH 2 // size of the tiles
+#define TILE_WIDTH 8 // size of the tiles
 
 /**
  * Computes the matrix multiplication on the CPU
@@ -20,13 +20,13 @@
  * p - Product of m and n
  * width - Size of the matrices being operated upon
 */
-void MatrixMulOnHost(float *m, float *n, float *p, int width){
+void MatrixMulOnHost(double *m, double *n, double *p, int width){
 	for(int row = 0; row < width; ++row){
 		for(int col = 0; col < width; ++col){
 			double sum = 0;
 			for(int k = 0; k < width; ++k){
-				float a = m[row * width + k];
-				float b = n[k * width + col];
+				double a = m[row * width + k];
+				double b = n[k * width + col];
 				
 				sum +=  a * b;
 			}
@@ -42,10 +42,10 @@ void MatrixMulOnHost(float *m, float *n, float *p, int width){
  * p - Product of d_M and d_N
  * Width - Size of the matrices being operated upon
 */
-__global__ void MatrixMulKernel(float* d_M, float* d_N, float* d_P, int Width)
+__global__ void MatrixMulKernel(double* d_M, double* d_N, double* d_P, int Width)
 {
-	 __shared__ float ds_M[TILE_WIDTH][TILE_WIDTH];
-	 __shared__ float ds_N[TILE_WIDTH][TILE_WIDTH];
+	 __shared__ double ds_M[TILE_WIDTH][TILE_WIDTH];
+	 __shared__ double ds_N[TILE_WIDTH][TILE_WIDTH];
 
 	 int bx = blockIdx.x;  int by = blockIdx.y;
 	 int tx = threadIdx.x; int ty = threadIdx.y;
@@ -54,7 +54,7 @@ __global__ void MatrixMulKernel(float* d_M, float* d_N, float* d_P, int Width)
 	int Row = by * TILE_WIDTH + ty;
 	int Col = bx * TILE_WIDTH + tx;
 	
-	float Pvalue = 0;
+	double Pvalue = 0;
 	// Loop over the Md and Nd tiles required to compute the Pd element
 	for (int m = 0; m < Width/TILE_WIDTH; ++m){
 		
@@ -78,23 +78,21 @@ __global__ void MatrixMulKernel(float* d_M, float* d_N, float* d_P, int Width)
 	C - Matrix to be tested
 	width - size of input matrices
 */
-bool verify(float *A, float *B, float *C, int  width) {
-     const float relativeTolerance = 1e-6; // 1e-6 = 0.000001 
+bool verify(double *A, double *B, double *C, int  width) {
+     const double relativeTolerance = 1e-6; // 1e-6 = 0.000001 
      for(int row = 0; row < width; ++row) {
     	for(int col = 0; col < width; ++col) {
-     		float sum = 0;
+     		double sum = 0;
       		for(unsigned int k = 0; k < width; ++k) {
         			sum += A[row*width + k]*B[k*width + col];
       		}
-      		float relativeError = (sum - C[row*width + col])/sum;
+      		double relativeError = (sum - C[row*width + col])/sum;
      	 	if (relativeError > relativeTolerance
        		 || relativeError < -relativeTolerance) {
-				 printf("TEST FAILED\n");
         			return false;
      	 	}
 		}
 	}
-	printf("TEST PASSED\n");
     return true; 
 }
 
@@ -103,10 +101,10 @@ bool verify(float *A, float *B, float *C, int  width) {
 	matrix - matrix to be printed
 	size - size of the matrix
 */
-void printMatrix(float *matrix, int size){
+void printMatrix(double *matrix, int size){
 	for(int i = 0; i < size; i++){
 		for(int j = 0; j < size; j++){
-			printf("%f ", matrix[i * size + j]);
+			printf("%lf ", matrix[i * size + j]);
 		}
 		printf("\n");
 	}
@@ -116,21 +114,21 @@ void printMatrix(float *matrix, int size){
 int main(int argc, char* argv[]) 
 { 
 	// matrices on the device
-	float *a, *b, *c, *d;
+	double *a, *b, *c, *d;
 	
 	// matrices for the gpu
-	float *dev_a, *dev_b, *dev_c;
+	double *dev_a, *dev_b, *dev_c;
 	
 	// allocate matrices
-	a = (float*)malloc(sizeof(float) * N * N);
-	b = (float*)malloc(sizeof(float) * N * N);
-	c = (float*)malloc(sizeof(float) * N * N);
-    d = (float*)malloc(sizeof(float) * N * N);
+	a = (double*)malloc(sizeof(double) * N * N);
+	b = (double*)malloc(sizeof(double) * N * N);
+	c = (double*)malloc(sizeof(double) * N * N);
+    d = (double*)malloc(sizeof(double) * N * N);
 	
 	// allocate device matrices
-	cudaMalloc((void **)(&dev_a), N*N*sizeof(float));
-	cudaMalloc((void **)(&dev_b), N*N*sizeof(float));
-	cudaMalloc((void **)(&dev_c), N*N*sizeof(float));
+	cudaMalloc((void **)(&dev_a), N*N*sizeof(double));
+	cudaMalloc((void **)(&dev_b), N*N*sizeof(double));
+	cudaMalloc((void **)(&dev_c), N*N*sizeof(double));
 	
 	// initialize matrices a and b
 	int init =1325;
@@ -154,8 +152,8 @@ int main(int argc, char* argv[])
 	cudaEventRecord(gpuStart,0);
 	
 	// copy array a,b (system memory) to dev_a, dev_b (device memory)
-	cudaMemcpy(dev_a,a,N*N*sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_b,b,N*N*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_a,a,N*N*sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_b,b,N*N*sizeof(double), cudaMemcpyHostToDevice);
 	
 	// Finish measuring time for copying memory over to device
 	cudaDeviceSynchronize(); 
@@ -196,7 +194,7 @@ int main(int argc, char* argv[])
 	cudaEventRecord(gpuStart,0);
 	
 	// copy results from GPU back to system memory
-	cudaMemcpy(c, dev_c, N*N*sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(c, dev_c, N*N*sizeof(double), cudaMemcpyDeviceToHost);
 	
 	// Finish measuring time for copying memory back to host
 	cudaDeviceSynchronize();
